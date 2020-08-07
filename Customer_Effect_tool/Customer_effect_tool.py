@@ -280,8 +280,13 @@ class MainWindow(QWidget):
                             inter_list = []
                             for index_inter in range(index, nrRows):
                                 if workSheet.cell(index_inter, refDTCCol).value == cel:
-                                    if workSheet.cell(index_inter, refLinkCol).value != "":
+                                    if workSheet.cell(index_inter, refLinkCol).value != "" and workSheet.cell(index_inter, refLinkCol).value not in inter_list and "\n" not in workSheet.cell(index_inter, refLinkCol).value:
                                         inter_list.append(workSheet.cell(index_inter, refLinkCol).value)
+                                    elif workSheet.cell(index_inter, refLinkCol).value != "" and workSheet.cell(index_inter, refLinkCol).value not in inter_list and "\n" in workSheet.cell(index_inter, refLinkCol).value:
+                                        reqs = workSheet.cell(index_inter, refLinkCol).value.split("\n")
+                                        for req in reqs:
+                                            if req not in inter_list:
+                                                inter_list.append(req)
                             # if inter_list:
                             self.dtc_link[cel] = inter_list
 
