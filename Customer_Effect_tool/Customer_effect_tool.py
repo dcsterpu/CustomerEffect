@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (QPushButton, QWidget, QLineEdit, QApplication, QLabel, QTextEdit, QFileDialog)
+from PyQt5.QtWidgets import (QPushButton, QWidget, QLineEdit, QApplication, QLabel, QTextEdit, QFileDialog, QRadioButton)
 from PyQt5 import QtCore
 import sys
 import GeneralStructureTester
@@ -48,6 +48,7 @@ class MainWindow(QWidget):
         self.DOC3Path = ""
         self.DOC4Path = ""
         # self.DOC4WorkBook = ""
+        self.dtc_link = dict()
         self.technical_effects = []
         self.technical_dtc = []
         self.DOCs3 = []
@@ -57,9 +58,9 @@ class MainWindow(QWidget):
 
     def initUI(self):
         # set workspace
-        self.tool_version = "Customer Effect List V1.2"
+        self.tool_version = "Customer Effect List V2.0"
         self.setWindowTitle(self.tool_version)
-        self.setGeometry(300, 300, 620, 400)
+        self.setGeometry(300, 300, 620, 440)
 
         # set controls for DOC3
         self.labelDoc3 = QLabel("System TSD File", self)
@@ -103,18 +104,28 @@ class MainWindow(QWidget):
         self.editName.resize(430, 25)
 
         self.button = QPushButton("Generate", self)
-        self.button.move(220, 350)
+        self.button.move(220, 400)
         self.button.clicked.connect(self.buttonGenerateClicked)
 
         self.button2 = QPushButton("Open file", self)
-        self.button2.move(320, 350)
+        self.button2.move(320, 400)
         self.button2.setEnabled(False)
         self.button2.clicked.connect(self.buttonOpenFileClicked)
+
+        self.labelTypeGeneration = QLabel("File generation strategy:", self)
+        self.labelTypeGeneration.move(20, 235)
+        self.RadioButtonTehnicalEffects = QRadioButton(self)
+        self.RadioButtonTehnicalEffects.setText("Technical effects based")
+        self.RadioButtonTehnicalEffects.setChecked(True)
+        self.RadioButtonDTC = QRadioButton(self)
+        self.RadioButtonDTC.setText("DTC based")
+        self.RadioButtonTehnicalEffects.move(165, 235)
+        self.RadioButtonDTC.move(165, 260)
 
         message = ""
         self.textbox = QTextEdit(self)
         self.textbox.setText(message)
-        self.textbox.move(10, 235)
+        self.textbox.move(10, 285)
         self.textbox.resize(600, 100)
         self.textbox.setReadOnly(True)
 
@@ -212,6 +223,9 @@ class MainWindow(QWidget):
             refDTCRow = -1
             refTehnicalCol = -1
             refTehnicalRow = -1
+            refLinkCol = -1
+            refLinkRow = -1
+
 
             for index1 in range(0,nrRows):
                 for index2 in range(0,nrCols):
@@ -221,6 +235,9 @@ class MainWindow(QWidget):
                     if str(workSheet.cell(index1, index2).value).casefold().strip() == "Technical effect".casefold():
                         refTehnicalRow = index1
                         refTehnicalCol = index2
+                    if str(workSheet.cell(index1, index2).value).casefold().strip() == "Link to another DST".casefold():
+                        refLinkRow = index1
+                        refLinkCol = index2
 
             if refDTCRow != -1 and refDTCCol != -1:
                 text = self.textbox.toPlainText()
@@ -249,14 +266,29 @@ class MainWindow(QWidget):
                             dict['technical'] = workSheet.cell(index, refTehnicalCol).value.replace("\n", " ")
                             dict['dtc'] = workSheet.cell(index, refDTCCol).value
                             self.technical_dtc.append(dict)
-                print("alaaa")
             else:
                 # text = self.textbox.toPlainText()
                 self.textbox.setText("The file could not be generated because the connection cannot be made between 'Technical effect' and 'Data Trouble code'")
                 win32api.MessageBox(0, 'File generation failed!', 'Error')
                 self.flag_error = True
 
+            if self.RadioButtonDTC.isChecked() == True:
+                if refDTCRow != -1 and refDTCCol != -1 and refLinkCol != -1 and refLinkRow != -1:
+                    for index in range(refDTCRow + 1, nrRows):
+                        cel = workSheet.cell(index, refDTCCol).value
+                        if cel != "" and cel not in self.dtc_link:
+                            inter_list = []
+                            for index_inter in range(index, nrRows):
+                                if workSheet.cell(index_inter, refDTCCol).value == cel:
+                                    if workSheet.cell(index_inter, refLinkCol).value != "":
+                                        inter_list.append(workSheet.cell(index_inter, refLinkCol).value)
+                            # if inter_list:
+                            self.dtc_link[cel] = inter_list
 
+                else:
+                    self.textbox.setText("The file could not be generated because the connection cannot be made between 'Data Trouble code' and 'Link to another DST")
+                    win32api.MessageBox(0, 'File generation failed!', 'Error')
+                    self.flag_error = True
 
         else:
             text = self.textbox.toPlainText()
@@ -368,8 +400,7 @@ class MainWindow(QWidget):
                     text = self.textbox.toPlainText()
                     self.textbox.setText(text + "\n" + "     Test_02043_19_04175_STRUCT_0200 " + " NOK")
 
-
-    def CreateFile(self):
+    def CreateFileTechnicalEffectsBased(self):
 
 
         wb = Workbook()
@@ -561,7 +592,198 @@ class MainWindow(QWidget):
 
 
 
-                # ws1.row_dimensions[current_row].height = 100
+        self.path_to_save = self.editOutput.text() + "/" + self.editName.text() + ".xlsx"
+        wb.save(self.path_to_save)
+
+        self.file_created = True
+        if self.file_created:
+            win32api.MessageBox(0, 'File has been created!', 'Information')
+            self.button2.setEnabled(True)
+
+    def CreateFileDTCBased(self):
+        print("Testing...")
+
+        wb = Workbook()
+
+        ws1 = wb.create_sheet("Customer Effects List")
+        ws2 = wb.create_sheet("Report information")
+
+        ws2['A1'] = "Tool version:"
+        ws2['B1'] = self.tool_version
+
+        ws2['A3'] = "Date of the test:"
+        ws2['B3'] = self.start_date.strftime("%d/%m/%Y")
+
+        ws2['A4'] = "Time of the test:"
+        ws2['B4'] = time.strftime('%H:%M:%S', self.start_time)
+
+        ws2['A7'] = "TSD system file used:"
+        ws2['B7'] = self.DOC4Path.split("/")[-1]
+
+        ws2['A8'] = "TSD function file used:"
+        ws2['B8'] = self.DOC3Path[0].split("/")[-1]
+        if len(self.DOC3Path) > 2:
+            for i in range(1, len(self.DOC3Path)):
+                index = 'B' + str(8 + i)
+                if self.DOC3Path[i] != "":
+                    ws2[index] = self.DOC3Path[i].split("/")[-1]
+
+        ws2.column_dimensions['A'].width = 25
+        ws2.column_dimensions['B'].width = 100
+
+        if "Sheet" in wb.sheetnames:
+            ws = wb["Sheet"]
+            wb.remove(ws)
+
+        ws1.column_dimensions['A'].width = 35
+        ws1.column_dimensions['B'].width = 35
+        ws1.column_dimensions['C'].width = 30
+        ws1.column_dimensions['D'].width = 30
+        ws1.column_dimensions['E'].width = 25
+        ws1.column_dimensions['F'].width = 25
+        ws1.column_dimensions['G'].width = 90
+        ws1.column_dimensions['H'].width = 90
+
+        for index1 in range(1, 3000):
+            for index2 in range(1, 9):
+                ws1.cell(index1, index2).border = Border(top=Side(border_style='thin', color='00000000'), right=Side(border_style='thin', color='00000000'), bottom=Side(border_style='thin', color='00000000'),left=Side(border_style='thin', color='00000000'))
+
+        ws1.merge_cells('A1:D1')
+        ws1['A1'] = "System TSD"
+        ws1['A1'].alignment = Alignment(horizontal='center')
+
+        ws1.merge_cells('E1:H1')
+        ws1['E1'] = "Function TSD"
+        ws1['E1'].alignment = Alignment(horizontal='center')
+
+        ws1['A2'] = "Data Trouble Code"
+        ws1['A2'].alignment = Alignment(horizontal='center')
+
+        ws1['B2'] = "Technical effects"
+        ws1['B2'].alignment = Alignment(horizontal='center')
+
+        ws1.merge_cells('C2:D2')
+        ws1['C2'] = "Upstream requirements"
+        ws1['C2'].alignment = Alignment(horizontal='center')
+
+        ws1.merge_cells('E2:F2')
+        ws1['E2'] = "Tracability with the TSD"
+        ws1['E2'].alignment = Alignment(horizontal='center')
+
+        ws1.merge_cells('G2:H2')
+        ws1['G2'] = "Customer effects"
+        ws1['G2'].alignment = Alignment(horizontal='center')
+
+        if self.dtc_link:
+            current_row = 3
+
+            for elem in self.dtc_link:
+                initial_row = current_row
+
+                index1 = 'A' + str(current_row)
+                ws1[index1] = elem
+                ws1[index1].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+
+                # index2 = 'B' + str(current_row)
+                # ws1[index2] = elem["technical"]
+                # ws1[index2].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+
+                index3 = 'C' + str(current_row)
+                upstream_req_string = ""
+                for i in range(0, len(self.dtc_link[elem])):
+                    if upstream_req_string == "":
+                        upstream_req_string = self.dtc_link[elem][i]
+                    else:
+                        upstream_req_string += "\n" + self.dtc_link[elem][i]
+                ws1[index3] = upstream_req_string
+                ws1[index3].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+
+
+                tracability_list = []
+                if upstream_req_string == "":
+                    index4 = 'D' + str(current_row)
+                    ws1[index4] = ""
+                    current_row = current_row + 1
+                    ws1[index4].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+                else:
+                    upstreams = upstream_req_string.split("\n")
+                    for stream in upstreams:
+
+                        intermediate_row = current_row
+
+                        index4 = 'D' + str(current_row)
+                        if stream != "":
+                            ws1[index4] = stream
+                            ws1[index4].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+
+                        for elem in self.tracability:
+                            try:
+                                tracability = elem[ws1.cell(current_row, 4).value]
+                                if isinstance(tracability, str):
+                                    index5 = 'E' + str(intermediate_row)
+                                    ws1[index5] = tracability
+                                    ws1[index5].alignment = Alignment(vertical='center', horizontal='center',
+                                                                      wrap_text=True)
+                                    intermediate_row += 1
+                                    if (tracability + ";\n") not in tracability_list:
+                                        tracability_list.append(tracability + ";\n")
+                                    break
+                                else:
+                                    for trac_elem in tracability:
+                                        index5 = 'E' + str(intermediate_row)
+                                        ws1[index5] = trac_elem
+                                        ws1[index5].alignment = Alignment(vertical='center', horizontal='center',
+                                                                          wrap_text=True)
+                                        intermediate_row += 1
+                                        if (trac_elem + ";\n") not in tracability_list:
+                                            tracability_list.append(trac_elem + ";\n")
+                                    break
+                            except:
+                                pass
+
+                        if intermediate_row - current_row > 1:
+                            ws1.merge_cells('D' + str(current_row) + ":D" + str(intermediate_row - 1))
+                        elif intermediate_row - current_row == 0 and stream != "":
+                            intermediate_row += 1
+
+                        current_row = intermediate_row
+
+                value = ""
+                index6 = "F" + str(initial_row)
+                for trac in tracability_list:
+                    value = value + trac
+                ws1[index6] = value
+                ws1[index6].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+
+                customer_list = []
+                for index in range(initial_row, current_row):
+                    for elem in self.customer:
+                        if ws1.cell(index, 5).value == elem["tracability"]:
+                            index7 = 'G' + str(index)
+                            ws1[index7] = elem["customer"]
+                            ws1[index7].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+                            if elem["customer"] + "\n" not in customer_list:
+                                customer_list.append(elem["customer"] + "\n")
+                            break
+
+                cel_value = ""
+                index8 = "H" + str(initial_row)
+                for elem in customer_list:
+                    cel_value = cel_value + elem
+                ws1[index8] = cel_value
+                ws1[index8].alignment = Alignment(vertical='center', horizontal='center', wrap_text=True)
+                try:
+                    ws1.merge_cells('H' + str(initial_row) + ":H" + str(current_row - 1))
+                    ws1.merge_cells('F' + str(initial_row) + ":F" + str(current_row - 1))
+
+                    ws1.merge_cells('A' + str(initial_row) + ":A" + str(current_row - 1))
+                    ws1.merge_cells('B' + str(initial_row) + ":B" + str(current_row - 1))
+                    ws1.merge_cells('C' + str(initial_row) + ":C" + str(current_row - 1))
+                except:
+                    pass
+
+
+
 
         self.path_to_save = self.editOutput.text() + "/" + self.editName.text() + ".xlsx"
         wb.save(self.path_to_save)
@@ -584,7 +806,11 @@ class MainWindow(QWidget):
             return
         self.DOC3Parser()
 
-        self.CreateFile()
+        if self.RadioButtonTehnicalEffects.isChecked() == True:
+            self.CreateFileTechnicalEffectsBased()
+
+        elif self.RadioButtonDTC.isChecked() == True:
+            self.CreateFileDTCBased()
 
     def buttonOpenFileClicked(self):
 
